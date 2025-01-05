@@ -1,0 +1,43 @@
+name: Deploy on PRODUCTION
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST_PRODUCTION }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY_PRODUCTION }}
+          port: ${{ secrets.EC2_PORT }}
+          script: |
+            export NVM_DIR=~/.nvm
+            source ~/.nvm/nvm.sh
+            nvm use 20.11.1
+            cd /root/zonesage/welcome-screen-node
+            git config --global user.name "${{ secrets.GIT_USERNAME }}"
+            git remote set-url origin https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/zonesage/welcome-screen-node.git
+            git checkout .
+            rm -rf dist
+            git fetch origin main
+            git checkout main
+            git pull origin main
+            npm install
+            npm run build
+            echo ${{ secrets.DOPPLER_TOKEN_PRODUCTION }} | doppler configure set token --scope ./
+            doppler run -- sh -c 'npm run serve:migration'
+            pm2 delete welcome-screen-node
+            doppler run -- sh -c 'NODE_ENV=production NODE_CONFIG_ENV=production pm2 start npm --name "welcome-screen-node" -- start'
+            pm2 save
+            
+            
